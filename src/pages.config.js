@@ -47,8 +47,14 @@
  *
  * The mainPage value must match a key in the PAGES object exactly.
  */
+import PromptMaster from './pages/PromptMaster';
 
-export const pagesConfig = {
-	Pages: {}
+
+export const PAGES = {
+    "PromptMaster": PromptMaster,
 }
 
+export const pagesConfig = {
+    mainPage: "PromptMaster",
+    Pages: PAGES,
+};
