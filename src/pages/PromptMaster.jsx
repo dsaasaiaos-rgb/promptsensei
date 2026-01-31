@@ -50,6 +50,9 @@ import LoadingScreen from '../components/LoadingScreen';
 import PromptCard from '../components/PromptCard';
 import TemplateCard from '../components/TemplateCard';
 import VersionHistoryModal from '../components/VersionHistoryModal';
+import PlaygroundControls from '../components/PlaygroundControls';
+import ComparisonView from '../components/ComparisonView';
+import CoachingFeedback from '../components/CoachingFeedback';
 
 // Custom Styles for Dotted Background
 const bgStyle = {
@@ -82,6 +85,16 @@ export default function PromptMaster() {
   // Audit State
   const [auditInput, setAuditInput] = useState('');
   const [auditResult, setAuditResult] = useState(null);
+
+  // Playground State
+  const [playgroundPrompt, setPlaygroundPrompt] = useState('');
+  const [playgroundParams, setPlaygroundParams] = useState({
+    temperature: 0.7,
+    top_p: 0.9,
+    max_tokens: 2000
+  });
+  const [playgroundRuns, setPlaygroundRuns] = useState([]);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Templates State
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -355,28 +368,53 @@ export default function PromptMaster() {
     }
   };
 
-  // --- Audit Handler ---
+  // --- Audit Handler (Enhanced with AI Coaching) ---
   const handleAuditPrompt = async () => {
     if (!auditInput.trim()) return;
     setLoading(true);
     setError(null);
     setAuditResult(null);
 
-    const systemPrompt = `You are a Strict Prompt Engineering Auditor. Analyze based on: Specificity, Technical Context, Constraints, Verification.`;
+    const systemPrompt = `You are an Expert Prompt Engineering Coach with deep knowledge of NLP, bias detection, and effective communication.
+    
+Analyze this prompt across multiple dimensions:
+
+1. SPECIFICITY (0-100): How precise and detailed is the prompt?
+2. CLARITY (0-100): How easy is it to understand?
+3. STRUCTURE (0-100): Is it well-organized with clear sections?
+4. BIAS DETECTION (0-100): Is it free from harmful biases? (100 = bias-free)
+
+For each dimension, provide specific feedback explaining the score.
+
+Also identify:
+- Concrete improvements (actionable steps)
+- Any potential biases (gender, cultural, etc.)
+- An example of a high-quality rewritten version
+
+Calculate an overall_score as the average of all dimensions.`;
     
     const schema = {
       type: "object",
       properties: {
-        score: { type: "number" },
-        critique: { type: "string" },
-        strengths: { type: "array", items: { type: "string" } },
-        weaknesses: { type: "array", items: { type: "string" } },
+        overall_score: { type: "number" },
+        summary: { type: "string" },
+        specificity_score: { type: "number" },
+        specificity_feedback: { type: "string" },
+        clarity_score: { type: "number" },
+        clarity_feedback: { type: "string" },
+        structure_score: { type: "number" },
+        structure_feedback: { type: "string" },
+        bias_score: { type: "number" },
+        bias_feedback: { type: "string" },
+        improvements: { type: "array", items: { type: "string" } },
+        biases_detected: { type: "array", items: { type: "string" } },
+        example_rewrite: { type: "string" },
         optimizedPrompt: { type: "string" }
       }
     };
 
     try {
-      const result = await callLLM(`${systemPrompt}\n\nAudit this prompt:\n\n${auditInput}`, schema);
+      const result = await callLLM(`${systemPrompt}\n\nPrompt to analyze:\n\n${auditInput}`, schema);
       setAuditResult(result);
       
       // Save to database
@@ -449,6 +487,54 @@ export default function PromptMaster() {
     } catch (error) {
       setError('Failed to revert version');
     }
+  };
+
+  // --- Playground Handlers ---
+  const handlePlaygroundRun = async () => {
+    if (!playgroundPrompt.trim()) return;
+    setIsGenerating(true);
+    setError(null);
+
+    const startTime = Date.now();
+    
+    try {
+      // Note: Base44's InvokeLLM doesn't support these parameters directly
+      // This simulates the behavior - in production, you'd use a custom backend function
+      const result = await callLLM(playgroundPrompt);
+      const endTime = Date.now();
+
+      const run = {
+        prompt_content: playgroundPrompt,
+        temperature: playgroundParams.temperature,
+        top_p: playgroundParams.top_p,
+        max_tokens: playgroundParams.max_tokens,
+        output: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+        generation_time_ms: endTime - startTime
+      };
+
+      // Save to database
+      await base44.entities.PlaygroundRun.create(run);
+      
+      // Add to comparison view
+      setPlaygroundRuns([run, ...playgroundRuns]);
+      
+      setCopyFeedback('Generated successfully!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleClearComparison = () => {
+    setPlaygroundRuns([]);
+  };
+
+  const handleLoadTemplate = (template) => {
+    setPlaygroundPrompt(template.content);
+    setCopyFeedback('Template loaded!');
+    setTimeout(() => setCopyFeedback(null), 2000);
   };
 
   const filteredTemplates = templates.filter(t => {
@@ -540,6 +626,7 @@ export default function PromptMaster() {
               { id: 'builder', label: 'Builder', icon: Wand2 },
               { id: 'reverse', label: 'Reverse', icon: Code2 },
               { id: 'audit', label: 'Audit', icon: ClipboardCheck },
+              { id: 'playground', label: 'Playground', icon: Zap },
               { id: 'templates', label: 'Templates', icon: Bookmark },
               { id: 'history', label: 'Database', icon: Database }
             ].map((tab) => (
@@ -789,15 +876,15 @@ export default function PromptMaster() {
                 </div>
               )}
 
-              {/* AUDIT TAB */}
+              {/* AUDIT TAB (Enhanced with AI Coaching) */}
               {activeTab === 'audit' && (
-                <div className="w-full max-w-3xl flex flex-col items-center animate-in fade-in duration-500">
+                <div className="w-full max-w-4xl flex flex-col items-center animate-in fade-in duration-500">
                   <div className="w-full bg-white rounded-2xl p-8 border border-[#FECDD3] shadow-[0_4px_20px_rgba(0,0,0,0.05)] mb-8">
                     <div className="flex items-center gap-3 mb-2">
                       <div className="p-2 bg-[#FFF1F2] rounded-lg text-[#BE123C]"><ClipboardCheck className="w-6 h-6" /></div>
-                      <h2 className="text-2xl font-bold text-gray-800">Prompt Auditor</h2>
+                      <h2 className="text-2xl font-bold text-gray-800">AI Prompt Coach</h2>
                     </div>
-                    <p className="text-gray-500 ml-12">Get a professional grade (0-100) and specific feedback to improve your prompts.</p>
+                    <p className="text-gray-500 ml-12">Get real-time AI-driven analysis with bias detection, structure feedback, and actionable improvements.</p>
                   </div>
 
                   {!auditResult ? (
@@ -807,7 +894,7 @@ export default function PromptMaster() {
                         <textarea
                           value={auditInput}
                           onChange={(e) => setAuditInput(e.target.value)}
-                          placeholder="Paste your prompt here to audit..."
+                          placeholder="Paste your prompt here for AI coaching..."
                           className="w-full h-64 p-6 text-gray-700 bg-white rounded-xl border-none resize-none font-mono text-sm leading-relaxed focus:ring-0"
                         />
                       </div>
@@ -817,45 +904,12 @@ export default function PromptMaster() {
                         className="mt-6 w-full py-4 bg-gradient-to-r from-[#E11D48] to-[#BE123C] text-white rounded-xl font-bold flex items-center justify-center shadow-lg shadow-[#E11D48]/30 hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50"
                       >
                         <Sparkles className="w-5 h-5 mr-2" />
-                        Audit & Optimize
+                        Analyze with AI Coach
                       </button>
                     </div>
                   ) : (
                     <div className="w-full space-y-8">
-                      <div className="bg-white rounded-2xl p-8 border border-[#FECDD3] flex flex-col md:flex-row gap-8 items-center">
-                        <div className="relative w-32 h-32 flex items-center justify-center">
-                          <svg className="w-full h-full transform -rotate-90">
-                            <circle cx="64" cy="64" r="60" stroke="#FFF1F2" strokeWidth="12" fill="none" />
-                            <circle 
-                              cx="64" cy="64" r="60" 
-                              stroke={auditResult.score > 80 ? "#10B981" : auditResult.score > 50 ? "#F59E0B" : "#EF4444"} 
-                              strokeWidth="12" 
-                              fill="none" 
-                              strokeDasharray="377" 
-                              strokeDashoffset={377 - (377 * auditResult.score) / 100} 
-                              className="transition-all duration-1000 ease-out"
-                            />
-                          </svg>
-                          <div className="absolute flex flex-col items-center">
-                            <span className="text-3xl font-bold text-gray-800">{auditResult.score}</span>
-                            <span className="text-[10px] text-gray-400 uppercase tracking-widest">Score</span>
-                          </div>
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-xl font-bold text-gray-800 mb-2">Audit Report</h3>
-                          <p className="text-gray-600 mb-4">{auditResult.critique}</p>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <span className="flex items-center text-xs font-bold text-green-600 uppercase mb-2"><ThumbsUp className="w-3 h-3 mr-1" /> Strengths</span>
-                              <ul className="text-xs text-gray-500 list-disc list-inside">{auditResult.strengths?.map((s,i) => <li key={i}>{s}</li>)}</ul>
-                            </div>
-                            <div>
-                              <span className="flex items-center text-xs font-bold text-red-500 uppercase mb-2"><ThumbsDown className="w-3 h-3 mr-1" /> Weaknesses</span>
-                              <ul className="text-xs text-gray-500 list-disc list-inside">{auditResult.weaknesses?.map((w,i) => <li key={i}>{w}</li>)}</ul>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      <CoachingFeedback analysis={auditResult} />
 
                       <div className="relative group animate-in slide-in-from-bottom-4 fade-in duration-700">
                         <div className="absolute -top-3 left-4 bg-[#E11D48] text-white text-[10px] px-2 py-0.5 rounded font-bold tracking-wider uppercase flex items-center gap-1">
@@ -874,10 +928,96 @@ export default function PromptMaster() {
                         className="w-full py-3 bg-white border border-[#FECDD3] hover:border-[#E11D48] hover:text-[#E11D48] text-gray-600 rounded-xl font-semibold flex items-center justify-center transition-all"
                       >
                         <RefreshCw className="w-4 h-4 mr-2" />
-                        Audit Another Prompt
+                        Analyze Another Prompt
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* PLAYGROUND TAB */}
+              {activeTab === 'playground' && (
+                <div className="w-full max-w-6xl flex flex-col items-center animate-in fade-in duration-500">
+                  <div className="w-full bg-white rounded-2xl p-8 border border-[#FECDD3] shadow-[0_4px_20px_rgba(0,0,0,0.05)] mb-8">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="p-2 bg-[#FFF1F2] rounded-lg text-[#BE123C]"><Zap className="w-6 h-6" /></div>
+                      <h2 className="text-2xl font-bold text-gray-800">AI Playground</h2>
+                    </div>
+                    <p className="text-gray-500 ml-12">Experiment with LLM parameters and compare outputs in real-time.</p>
+                  </div>
+
+                  <div className="w-full grid lg:grid-cols-3 gap-6">
+                    {/* Left: Input & Controls */}
+                    <div className="lg:col-span-2 space-y-6">
+                      {/* Template Quick Load */}
+                      <div className="bg-white border border-[#FECDD3] rounded-xl p-4">
+                        <h3 className="text-sm font-bold text-gray-600 mb-3 uppercase tracking-wide">Quick Load Template</h3>
+                        <div className="flex gap-2 flex-wrap">
+                          {templates.slice(0, 4).map((template) => (
+                            <button
+                              key={template.id}
+                              onClick={() => handleLoadTemplate(template)}
+                              className="px-3 py-2 text-xs bg-[#FFF1F2] hover:bg-[#FFE4E6] text-[#E11D48] rounded-lg font-medium transition-colors border border-[#FECDD3]"
+                            >
+                              {template.title}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Prompt Input */}
+                      <div className="bg-white border-2 border-[#FECDD3] rounded-2xl p-1 focus-within:border-[#E11D48] transition-colors">
+                        <textarea
+                          value={playgroundPrompt}
+                          onChange={(e) => setPlaygroundPrompt(e.target.value)}
+                          placeholder="Enter your prompt here to test with different parameters..."
+                          className="w-full h-64 p-6 text-gray-700 bg-transparent rounded-xl border-none resize-none font-mono text-sm leading-relaxed focus:ring-0"
+                        />
+                      </div>
+
+                      {/* Generate Button */}
+                      <div className="flex gap-3">
+                        <button
+                          onClick={handlePlaygroundRun}
+                          disabled={!playgroundPrompt.trim() || isGenerating}
+                          className="flex-1 py-4 bg-gradient-to-r from-[#E11D48] to-[#BE123C] text-white rounded-xl font-bold flex items-center justify-center shadow-lg shadow-[#E11D48]/30 hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                        >
+                          {isGenerating ? (
+                            <>
+                              <Cpu className="w-5 h-5 mr-2 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="w-5 h-5 mr-2" />
+                              Generate & Compare
+                            </>
+                          )}
+                        </button>
+                        {playgroundRuns.length > 0 && (
+                          <button
+                            onClick={handleClearComparison}
+                            className="px-6 py-4 bg-white border border-[#FECDD3] hover:border-[#E11D48] text-gray-600 rounded-xl font-semibold transition-all"
+                          >
+                            Clear All
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Comparison Results */}
+                      {playgroundRuns.length > 0 && (
+                        <ComparisonView runs={playgroundRuns} onCopy={copyToClipboard} />
+                      )}
+                    </div>
+
+                    {/* Right: Parameter Controls */}
+                    <div className="lg:col-span-1">
+                      <PlaygroundControls
+                        params={playgroundParams}
+                        onChange={setPlaygroundParams}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 
