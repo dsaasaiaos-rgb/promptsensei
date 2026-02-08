@@ -53,6 +53,9 @@ import VersionHistoryModal from '../components/VersionHistoryModal';
 import PlaygroundControls from '../components/PlaygroundControls';
 import ComparisonView from '../components/ComparisonView';
 import CoachingFeedback from '../components/CoachingFeedback';
+import AITemplateGenerator from '../components/AITemplateGenerator';
+import TemplateAnalytics from '../components/TemplateAnalytics';
+import ShareWorkspaceModal from '../components/ShareWorkspaceModal';
 import TemplateGenerator from '../components/TemplateGenerator';
 import UsageAnalytics from '../components/UsageAnalytics';
 import ShareModal from '../components/ShareModal';
@@ -99,6 +102,9 @@ export default function PromptMaster() {
   });
   const [playgroundRuns, setPlaygroundRuns] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showSavePreset, setShowSavePreset] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [currentRunTemplate, setCurrentRunTemplate] = useState(null);
   const [showPresetSave, setShowPresetSave] = useState(false);
   const [presetName, setPresetName] = useState('');
 
@@ -145,6 +151,18 @@ export default function PromptMaster() {
   });
 
   // Fetch Favorites
+  const { data: favorites = [] } = useQuery({
+    queryKey: ['favorites'],
+    queryFn: () => base44.entities.TemplateFavorite.list()
+  });
+
+  // Fetch Presets
+  const { data: presets = [] } = useQuery({
+    queryKey: ['presets'],
+    queryFn: () => base44.entities.PlaygroundPreset.list()
+  });
+
+  // Fetch Favorites
   const { data: user } = useQuery({
     queryKey: ['user'],
     queryFn: () => base44.auth.me()
@@ -175,9 +193,25 @@ export default function PromptMaster() {
     onSuccess: () => {
       queryClient.invalidateQueries(['templates']);
       setShowCreateTemplate(false);
-      setNewTemplate({ title: '', description: '', category: 'other', content: '', tags: [] });
+      setShowAIGenerator(false);
+      setNewTemplate({ title: '', description: '', category: 'other', content: '', tags: [], example_usage: '' });
       setCopyFeedback('Template created successfully!');
       setTimeout(() => setCopyFeedback(null), 2000);
+    }
+  });
+
+  // Toggle Favorite Mutation
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: async (templateId) => {
+      const existing = favorites.find(f => f.template_id === templateId);
+      if (existing) {
+        await base44.entities.TemplateFavorite.delete(existing.id);
+      } else {
+        await base44.entities.TemplateFavorite.create({ template_id: templateId });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['favorites']);
     }
   });
 
@@ -510,6 +544,72 @@ Calculate an overall_score as the average of all dimensions.`;
     });
   };
 
+  const handleAIGenerateTemplate = (generatedTemplate) => {
+    createTemplateMutation.mutate({
+      ...generatedTemplate,
+      is_system: false,
+      usage_count: 0
+    });
+  };
+
+  const handleShareWorkspace = async (sharedWith) => {
+    if (!selectedItemToShare) return;
+    
+    try {
+      await base44.entities.Template.update(selectedItemToShare.id, {
+        is_shared: true,
+        shared_with: sharedWith
+      });
+      queryClient.invalidateQueries(['templates']);
+      setShowShareModal(false);
+      setSelectedItemToShare(null);
+      setCopyFeedback('Shared successfully!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    } catch (error) {
+      setError('Failed to share');
+    }
+  };
+
+  const handleSavePreset = async () => {
+    if (!presetName.trim()) return;
+    
+    try {
+      await base44.entities.PlaygroundPreset.create({
+        name: presetName,
+        ...playgroundParams
+      });
+      queryClient.invalidateQueries(['presets']);
+      setShowSavePreset(false);
+      setPresetName('');
+      setCopyFeedback('Preset saved!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    } catch (error) {
+      setError('Failed to save preset');
+    }
+  };
+
+  const handleLoadPreset = (preset) => {
+    setPlaygroundParams({
+      temperature: preset.temperature,
+      top_p: preset.top_p,
+      max_tokens: preset.max_tokens
+    });
+    setCopyFeedback(`Loaded preset: ${preset.name}`);
+    setTimeout(() => setCopyFeedback(null), 2000);
+  };
+
+  const handleSaveRunAsTemplate = async (run) => {
+    setNewTemplate({
+      title: `Template from Playground - ${new Date().toLocaleDateString()}`,
+      description: 'Generated from playground run',
+      category: 'other',
+      content: run.prompt_content,
+      tags: ['playground', 'custom'],
+      example_usage: `Parameters used: Temp=${run.temperature}, Top-P=${run.top_p}, Max Tokens=${run.max_tokens}`
+    });
+    setShowCreateTemplate(true);
+  };
+
   // --- Version History Handlers ---
   const handleRevertVersion = async (version) => {
     try {
@@ -722,6 +822,12 @@ Format the prompt content professionally with clear structure and instructions.`
       t.description?.toLowerCase().includes(templateSearch.toLowerCase());
     return matchesCategory && matchesSearch;
   });
+
+  const favoriteTemplates = templates.filter(t => 
+    favorites.some(f => f.template_id === t.id)
+  );
+
+  const isFavorite = (templateId) => favorites.some(f => f.template_id === templateId);
 
   return (
     <div className="flex min-h-screen text-gray-800 font-sans relative overflow-x-hidden" style={bgStyle}>
@@ -1231,11 +1337,57 @@ Format the prompt content professionally with clear structure and instructions.`
                     </div>
 
                     {/* Right: Parameter Controls */}
-                    <div className="lg:col-span-1">
+                    <div className="lg:col-span-1 space-y-6">
                       <PlaygroundControls
                         params={playgroundParams}
                         onChange={setPlaygroundParams}
                       />
+
+                      {/* Save Preset */}
+                      <div className="bg-white border border-[#FECDD3] rounded-xl p-4">
+                        <h3 className="text-sm font-bold text-gray-600 mb-3 uppercase tracking-wide">Saved Presets</h3>
+                        {presets.length > 0 && (
+                          <div className="space-y-2 mb-3">
+                            {presets.map((preset) => (
+                              <button
+                                key={preset.id}
+                                onClick={() => handleLoadPreset(preset)}
+                                className="w-full px-3 py-2 text-xs bg-[#FFF1F2] hover:bg-[#FFE4E6] text-[#E11D48] rounded-lg font-medium transition-colors border border-[#FECDD3] text-left"
+                              >
+                                {preset.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {!showSavePreset ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShowSavePreset(true)}
+                            className="w-full"
+                          >
+                            <Plus className="w-3 h-3 mr-2" />
+                            Save Current as Preset
+                          </Button>
+                        ) : (
+                          <div className="space-y-2">
+                            <Input
+                              placeholder="Preset name..."
+                              value={presetName}
+                              onChange={(e) => setPresetName(e.target.value)}
+                              className="text-xs"
+                            />
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={handleSavePreset} className="flex-1">
+                                Save
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => setShowSavePreset(false)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

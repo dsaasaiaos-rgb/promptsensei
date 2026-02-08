@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Copy, ArrowRight, Tag, Users, Star, Maximize2, Minimize2 } from 'lucide-react';
+import { Copy, ArrowRight, Tag, Users, Star, Maximize2, Minimize2, Share2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 const categoryColors = {
   content_generation: "bg-purple-100 text-purple-800 border-purple-200",
@@ -13,7 +14,7 @@ const categoryColors = {
   other: "bg-gray-100 text-gray-800 border-gray-200"
 };
 
-export default function TemplateCard({ template, onSelect, onCopy }) {
+export default function TemplateCard({ template, onSelect, onCopy, isFavorite, onToggleFavorite, onShare }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -85,14 +86,34 @@ export default function TemplateCard({ template, onSelect, onCopy }) {
       )}
       
       <div className="flex items-center justify-between mt-auto pt-3 border-t border-[#FECDD3]/50">
-        <div className="flex items-center text-xs text-gray-500 gap-4">
-          <span className="flex items-center font-medium">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite?.();
+            }}
+            className="p-1 hover:bg-[#FFF1F2] rounded transition-colors"
+          >
+            <Star className={`w-4 h-4 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`} />
+          </button>
+          {onShare && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onShare();
+              }}
+              className="p-1 hover:bg-[#FFF1F2] rounded transition-colors"
+            >
+              <Share2 className="w-4 h-4 text-gray-400" />
+            </button>
+          )}
+          <span className="flex items-center font-medium text-xs text-gray-500">
             <Users className="w-3 h-3 mr-1" />
-            {template.usage_count || 0} uses
+            {template.usage_count || 0}
           </span>
         </div>
         <div className="flex items-center text-[#E11D48] font-semibold text-sm group-hover:translate-x-1 transition-transform">
-          Use Template <ArrowRight className="w-4 h-4 ml-1" />
+          Use <ArrowRight className="w-4 h-4 ml-1" />
         </div>
       </div>
     </div>

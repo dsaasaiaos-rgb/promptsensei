@@ -1,9 +1,9 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Zap, Copy } from 'lucide-react';
+import { Clock, Zap, Copy, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export default function ComparisonView({ runs, onCopy }) {
+export default function ComparisonView({ runs, onCopy, onSaveAsTemplate }) {
   if (!runs || runs.length === 0) return null;
 
   return (
@@ -41,6 +41,16 @@ export default function ComparisonView({ runs, onCopy }) {
                     {run.generation_time_ms}ms
                   </span>
                 )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onSaveAsTemplate?.(run)}
+                  className="h-7 px-2"
+                  title="Save as Template"
+                >
+                  <Save className="w-3 h-3 mr-1" />
+                  <span className="text-xs">Template</span>
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
