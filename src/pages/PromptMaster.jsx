@@ -53,6 +53,10 @@ import VersionHistoryModal from '../components/VersionHistoryModal';
 import PlaygroundControls from '../components/PlaygroundControls';
 import ComparisonView from '../components/ComparisonView';
 import CoachingFeedback from '../components/CoachingFeedback';
+import TemplateGenerator from '../components/TemplateGenerator';
+import UsageAnalytics from '../components/UsageAnalytics';
+import ShareModal from '../components/ShareModal';
+import CommentSection from '../components/CommentSection';
 
 // Custom Styles for Dotted Background
 const bgStyle = {
@@ -95,12 +99,22 @@ export default function PromptMaster() {
   });
   const [playgroundRuns, setPlaygroundRuns] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showPresetSave, setShowPresetSave] = useState(false);
+  const [presetName, setPresetName] = useState('');
+
+  // Sharing & Collaboration State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [selectedForShare, setSelectedForShare] = useState(null);
+  const [showComments, setShowComments] = useState(false);
+  const [selectedForComments, setSelectedForComments] = useState(null);
 
   // Templates State
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateCategory, setTemplateCategory] = useState('all');
   const [templateSearch, setTemplateSearch] = useState('');
   const [showCreateTemplate, setShowCreateTemplate] = useState(false);
+  const [showAIGenerator, setShowAIGenerator] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [newTemplate, setNewTemplate] = useState({
     title: '',
     description: '',
@@ -128,6 +142,31 @@ export default function PromptMaster() {
   const { data: templates = [], isLoading: templatesLoading } = useQuery({
     queryKey: ['templates'],
     queryFn: () => base44.entities.Template.list('-usage_count', 100)
+  });
+
+  // Fetch Favorites
+  const { data: user } = useQuery({
+    queryKey: ['user'],
+    queryFn: () => base44.auth.me()
+  });
+
+  const { data: favorites = [] } = useQuery({
+    queryKey: ['favorites', user?.email],
+    queryFn: () => base44.entities.FavoriteTemplate.filter({ user_email: user.email }),
+    enabled: !!user
+  });
+
+  // Fetch Presets
+  const { data: presets = [] } = useQuery({
+    queryKey: ['presets'],
+    queryFn: () => base44.entities.PlaygroundPreset.list('-created_date', 50)
+  });
+
+  // Fetch Comments for selected generation
+  const { data: comments = [] } = useQuery({
+    queryKey: ['comments', selectedForComments?.id],
+    queryFn: () => base44.entities.PromptComment.filter({ generation_id: selectedForComments.id }),
+    enabled: !!selectedForComments
   });
 
   // Create Template Mutation
@@ -535,6 +574,145 @@ Calculate an overall_score as the average of all dimensions.`;
     setPlaygroundPrompt(template.content);
     setCopyFeedback('Template loaded!');
     setTimeout(() => setCopyFeedback(null), 2000);
+  };
+
+  // --- AI Template Generation ---
+  const handleAIGenerateTemplate = async (useCase, category) => {
+    setLoading(true);
+    setError(null);
+
+    const systemPrompt = `You are an expert prompt engineer. Create a professional prompt template based on this use case.
+
+Generate a complete template with:
+1. A clear, descriptive title
+2. A brief description explaining what the template does
+3. The actual prompt content with {{VARIABLE}} placeholders for customization
+4. A list of variables used (extract from the content)
+5. Tags for searchability (5-7 relevant tags)
+
+Format the prompt content professionally with clear structure and instructions.`;
+
+    const schema = {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        description: { type: "string" },
+        content: { type: "string" },
+        variables: { type: "array", items: { type: "string" } },
+        tags: { type: "array", items: { type: "string" } }
+      }
+    };
+
+    try {
+      const result = await callLLM(`${systemPrompt}\n\nUse Case: ${useCase}\nCategory: ${category}`, schema);
+      
+      await base44.entities.Template.create({
+        ...result,
+        category,
+        is_system: false,
+        usage_count: 0
+      });
+
+      queryClient.invalidateQueries(['templates']);
+      setShowAIGenerator(false);
+      setCopyFeedback('AI-generated template created!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Favorites ---
+  const toggleFavorite = async (templateId) => {
+    const isFavorited = favorites.some(f => f.template_id === templateId);
+    
+    if (isFavorited) {
+      const fav = favorites.find(f => f.template_id === templateId);
+      await base44.entities.FavoriteTemplate.delete(fav.id);
+    } else {
+      await base44.entities.FavoriteTemplate.create({
+        template_id: templateId,
+        user_email: user.email
+      });
+    }
+    
+    queryClient.invalidateQueries(['favorites']);
+    setCopyFeedback(isFavorited ? 'Removed from favorites' : 'Added to favorites');
+    setTimeout(() => setCopyFeedback(null), 2000);
+  };
+
+  const isFavorited = (templateId) => {
+    return favorites.some(f => f.template_id === templateId);
+  };
+
+  // --- Sharing ---
+  const handleShare = async (shareData) => {
+    try {
+      await base44.entities.SharedPrompt.create(shareData);
+      queryClient.invalidateQueries(['shared']);
+      setShowShareModal(false);
+      setCopyFeedback('Shared successfully!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    } catch (error) {
+      setError('Failed to share');
+    }
+  };
+
+  // --- Comments ---
+  const handleAddComment = async (commentData) => {
+    try {
+      await base44.entities.PromptComment.create(commentData);
+      queryClient.invalidateQueries(['comments']);
+      setCopyFeedback('Comment posted!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    } catch (error) {
+      setError('Failed to post comment');
+    }
+  };
+
+  // --- Playground Presets ---
+  const handleSavePreset = async () => {
+    if (!presetName.trim()) return;
+    
+    try {
+      await base44.entities.PlaygroundPreset.create({
+        name: presetName,
+        description: `Temp: ${playgroundParams.temperature}, Top-P: ${playgroundParams.top_p}, Tokens: ${playgroundParams.max_tokens}`,
+        ...playgroundParams
+      });
+      
+      queryClient.invalidateQueries(['presets']);
+      setShowPresetSave(false);
+      setPresetName('');
+      setCopyFeedback('Preset saved!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    } catch (error) {
+      setError('Failed to save preset');
+    }
+  };
+
+  const handleLoadPreset = (preset) => {
+    setPlaygroundParams({
+      temperature: preset.temperature,
+      top_p: preset.top_p,
+      max_tokens: preset.max_tokens
+    });
+    setCopyFeedback('Preset loaded!');
+    setTimeout(() => setCopyFeedback(null), 2000);
+  };
+
+  // --- Save as Template from Playground ---
+  const handleSaveAsTemplate = async (run) => {
+    setNewTemplate({
+      title: 'Playground Template',
+      description: 'Generated from playground run',
+      category: 'other',
+      content: run.prompt_content,
+      tags: ['playground', `temp-${run.temperature}`, `tokens-${run.max_tokens}`]
+    });
+    setShowCreateTemplate(true);
   };
 
   const filteredTemplates = templates.filter(t => {
@@ -949,6 +1127,34 @@ Calculate an overall_score as the average of all dimensions.`;
                   <div className="w-full grid lg:grid-cols-3 gap-6">
                     {/* Left: Input & Controls */}
                     <div className="lg:col-span-2 space-y-6">
+                      {/* Presets Bar */}
+                      <div className="bg-white border border-[#FECDD3] rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wide">Saved Presets</h3>
+                          <button
+                            onClick={() => setShowPresetSave(true)}
+                            className="text-xs text-[#E11D48] hover:underline font-medium"
+                          >
+                            + Save Current
+                          </button>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          {presets.map((preset) => (
+                            <button
+                              key={preset.id}
+                              onClick={() => handleLoadPreset(preset)}
+                              className="px-3 py-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-medium transition-colors"
+                              title={preset.description}
+                            >
+                              {preset.name}
+                            </button>
+                          ))}
+                          {presets.length === 0 && (
+                            <span className="text-xs text-gray-400">No saved presets yet</span>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Template Quick Load */}
                       <div className="bg-white border border-[#FECDD3] rounded-xl p-4">
                         <h3 className="text-sm font-bold text-gray-600 mb-3 uppercase tracking-wide">Quick Load Template</h3>
@@ -1006,7 +1212,21 @@ Calculate an overall_score as the average of all dimensions.`;
 
                       {/* Comparison Results */}
                       {playgroundRuns.length > 0 && (
-                        <ComparisonView runs={playgroundRuns} onCopy={copyToClipboard} />
+                        <div className="space-y-4">
+                          <ComparisonView runs={playgroundRuns} onCopy={copyToClipboard} />
+                          
+                          {/* Save as Template Button */}
+                          {playgroundRuns.length > 0 && (
+                            <Button
+                              onClick={() => handleSaveAsTemplate(playgroundRuns[0])}
+                              variant="outline"
+                              className="w-full border-[#E11D48] text-[#E11D48]"
+                            >
+                              <Bookmark className="w-4 h-4 mr-2" />
+                              Save as Template
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -1029,13 +1249,31 @@ Calculate an overall_score as the average of all dimensions.`;
                       <div className="p-2 bg-[#FFF1F2] rounded-lg text-[#E11D48]"><Bookmark className="w-6 h-6" /></div>
                       <h2 className="text-2xl font-bold text-gray-800">Prompt Templates</h2>
                     </div>
-                    <Button
-                      onClick={() => setShowCreateTemplate(true)}
-                      className="bg-[#E11D48] hover:bg-[#BE123C] text-white"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Template
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => setShowAnalytics(!showAnalytics)}
+                        variant="outline"
+                        className="border-[#E11D48] text-[#E11D48]"
+                      >
+                        <Gauge className="w-4 h-4 mr-2" />
+                        Analytics
+                      </Button>
+                      <Button
+                        onClick={() => setShowAIGenerator(true)}
+                        variant="outline"
+                        className="border-[#E11D48] text-[#E11D48]"
+                      >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        AI Generate
+                      </Button>
+                      <Button
+                        onClick={() => setShowCreateTemplate(true)}
+                        className="bg-[#E11D48] hover:bg-[#BE123C] text-white"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create Manual
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Filters */}
@@ -1117,25 +1355,68 @@ Calculate an overall_score as the average of all dimensions.`;
                     </div>
                   )}
 
-                  {/* Templates Grid */}
-                  {templatesLoading ? (
-                    <LoadingScreen />
-                  ) : filteredTemplates.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-32 text-gray-300">
-                      <Bookmark className="w-16 h-16 mb-4 opacity-50 text-[#FECDD3]" />
-                      <p className="text-lg font-medium">No templates found</p>
-                    </div>
+                  {/* Analytics View */}
+                  {showAnalytics ? (
+                    <UsageAnalytics templates={templates} />
                   ) : (
-                    <div className="grid md:grid-cols-2 gap-6">
-                      {filteredTemplates.map((template) => (
-                        <TemplateCard
-                          key={template.id}
-                          template={template}
-                          onSelect={() => handleUseTemplate(template)}
-                          onCopy={copyToClipboard}
-                        />
-                      ))}
-                    </div>
+                    <>
+                      {/* Favorites Section */}
+                      {favorites.length > 0 && (
+                        <div className="mb-8">
+                          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <Star className="w-5 h-5 text-[#E11D48]" />
+                            Your Favorites
+                          </h3>
+                          <div className="grid md:grid-cols-2 gap-6">
+                            {templates
+                              .filter(t => isFavorited(t.id))
+                              .map((template) => (
+                                <div key={template.id} className="relative">
+                                  <button
+                                    onClick={() => toggleFavorite(template.id)}
+                                    className="absolute top-4 right-4 z-10 p-2 bg-white rounded-lg shadow-sm hover:bg-[#FFF1F2] transition-colors"
+                                  >
+                                    <Star className="w-4 h-4 text-[#E11D48] fill-[#E11D48]" />
+                                  </button>
+                                  <TemplateCard
+                                    template={template}
+                                    onSelect={() => handleUseTemplate(template)}
+                                    onCopy={copyToClipboard}
+                                  />
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Templates Grid */}
+                      {templatesLoading ? (
+                        <LoadingScreen />
+                      ) : filteredTemplates.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-32 text-gray-300">
+                          <Bookmark className="w-16 h-16 mb-4 opacity-50 text-[#FECDD3]" />
+                          <p className="text-lg font-medium">No templates found</p>
+                        </div>
+                      ) : (
+                        <div className="grid md:grid-cols-2 gap-6">
+                          {filteredTemplates.map((template) => (
+                            <div key={template.id} className="relative">
+                              <button
+                                onClick={() => toggleFavorite(template.id)}
+                                className="absolute top-4 right-16 z-10 p-2 bg-white rounded-lg shadow-sm hover:bg-[#FFF1F2] transition-colors"
+                              >
+                                <Star className={`w-4 h-4 ${isFavorited(template.id) ? 'text-[#E11D48] fill-[#E11D48]' : 'text-gray-400'}`} />
+                              </button>
+                              <TemplateCard
+                                template={template}
+                                onSelect={() => handleUseTemplate(template)}
+                                onCopy={copyToClipboard}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -1240,6 +1521,28 @@ Calculate an overall_score as the average of all dimensions.`;
                               </button>
                             )}
 
+                            <button
+                              onClick={() => {
+                                setSelectedForShare(item);
+                                setShowShareModal(true);
+                              }}
+                              className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-lg flex items-center transition-colors"
+                            >
+                              <Share2 className="w-3 h-3 mr-2" />
+                              Share
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setSelectedForComments(item);
+                                setShowComments(true);
+                              }}
+                              className="px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-600 text-xs font-bold rounded-lg flex items-center transition-colors"
+                            >
+                              <MessageSquare className="w-3 h-3 mr-2" />
+                              Comments
+                            </button>
+
                             <button 
                               onClick={() => copyToClipboard(item.type === 'reverse' ? item.inputCode : item.idea)}
                               className="ml-auto px-4 py-2 text-gray-400 hover:text-gray-600 text-xs font-bold flex items-center transition-colors"
@@ -1269,7 +1572,7 @@ Calculate an overall_score as the average of all dimensions.`;
         </footer>
       </div>
 
-      {/* Version History Modal */}
+      {/* Modals */}
       {showVersionModal && selectedGeneration && (
         <VersionHistoryModal
           generation={selectedGeneration}
@@ -1279,6 +1582,71 @@ Calculate an overall_score as the average of all dimensions.`;
           }}
           onRevert={handleRevertVersion}
         />
+      )}
+
+      {showAIGenerator && (
+        <TemplateGenerator
+          onGenerate={handleAIGenerateTemplate}
+          onClose={() => setShowAIGenerator(false)}
+          isGenerating={loading}
+        />
+      )}
+
+      {showShareModal && selectedForShare && (
+        <ShareModal
+          generation={selectedForShare}
+          onShare={handleShare}
+          onClose={() => {
+            setShowShareModal(false);
+            setSelectedForShare(null);
+          }}
+        />
+      )}
+
+      {showComments && selectedForComments && user && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-800">Comments & Feedback</h2>
+              <button onClick={() => setShowComments(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <CommentSection
+              comments={comments}
+              onAddComment={handleAddComment}
+              generationId={selectedForComments.id}
+              versionNumber={selectedForComments.current_version || 1}
+              currentUser={user}
+            />
+          </div>
+        </div>
+      )}
+
+      {showPresetSave && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-800">Save Preset</h2>
+              <button onClick={() => setShowPresetSave(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <Input
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              placeholder="e.g., Creative Writing, Code Generation"
+              className="mb-4"
+            />
+            <Button
+              onClick={handleSavePreset}
+              disabled={!presetName.trim()}
+              className="w-full bg-[#E11D48] hover:bg-[#BE123C]"
+            >
+              Save Preset
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
