@@ -1,0 +1,77 @@
+{
+  "name": "Template",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Template title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief description of the template"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "content_generation",
+        "code_explanation",
+        "data_analysis",
+        "debugging",
+        "documentation",
+        "learning",
+        "refactoring",
+        "other"
+      ],
+      "description": "Template category"
+    },
+    "content": {
+      "type": "string",
+      "description": "The actual prompt template"
+    },
+    "variables": {
+      "type": "array",
+      "description": "List of variables that can be filled in",
+      "items": {
+        "type": "string"
+      }
+    },
+    "is_system": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this is a system template or user-contributed"
+    },
+    "usage_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of times this template has been used"
+    },
+    "tags": {
+      "type": "array",
+      "description": "Searchable tags",
+      "items": {
+        "type": "string"
+      }
+    },
+    "is_shared": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether template is shared with team"
+    },
+    "shared_with": {
+      "type": "array",
+      "description": "List of user emails with access",
+      "items": {
+        "type": "string"
+      }
+    },
+    "example_usage": {
+      "type": "string",
+      "description": "Example of how to use the template"
+    }
+  },
+  "required": [
+    "title",
+    "content",
+    "category"
+  ]
+}

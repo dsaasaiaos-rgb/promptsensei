@@ -1,0 +1,63 @@
+{
+  "name": "Generation",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "builder",
+        "reverse",
+        "audit"
+      ],
+      "description": "Type of generation flow"
+    },
+    "idea": {
+      "type": "string",
+      "description": "Original user input/idea"
+    },
+    "prompt": {
+      "type": "object",
+      "description": "Selected prompt data"
+    },
+    "code": {
+      "type": "object",
+      "description": "Selected code/command data"
+    },
+    "result": {
+      "type": "object",
+      "description": "Final analysis result"
+    },
+    "inputCode": {
+      "type": "string",
+      "description": "Code input for reverse engineering"
+    },
+    "generatedPrompt": {
+      "type": "string",
+      "description": "Generated prompt from reverse engineering"
+    },
+    "analysis": {
+      "type": "string",
+      "description": "Analysis text"
+    },
+    "current_version": {
+      "type": "number",
+      "default": 1,
+      "description": "Current version number"
+    }
+  },
+  "required": [],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

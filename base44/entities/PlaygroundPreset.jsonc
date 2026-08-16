@@ -1,0 +1,28 @@
+{
+  "name": "PlaygroundPreset",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Preset name"
+    },
+    "temperature": {
+      "type": "number",
+      "description": "Temperature parameter"
+    },
+    "top_p": {
+      "type": "number",
+      "description": "Top P parameter"
+    },
+    "max_tokens": {
+      "type": "number",
+      "description": "Max tokens parameter"
+    }
+  },
+  "required": [
+    "name",
+    "temperature",
+    "top_p",
+    "max_tokens"
+  ]
+}

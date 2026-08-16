@@ -1,0 +1,49 @@
+{
+  "name": "PromptVersion",
+  "type": "object",
+  "properties": {
+    "generation_id": {
+      "type": "string",
+      "description": "ID of the parent generation"
+    },
+    "version_number": {
+      "type": "number",
+      "description": "Version number"
+    },
+    "prompt_content": {
+      "type": "string",
+      "description": "The prompt content at this version"
+    },
+    "command_content": {
+      "type": "string",
+      "description": "The command/code at this version"
+    },
+    "change_description": {
+      "type": "string",
+      "description": "Brief description of what changed"
+    },
+    "result_data": {
+      "type": "object",
+      "description": "Full result data for this version"
+    }
+  },
+  "required": [
+    "generation_id",
+    "version_number",
+    "prompt_content"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

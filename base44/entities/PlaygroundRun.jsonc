@@ -1,0 +1,52 @@
+{
+  "name": "PlaygroundRun",
+  "type": "object",
+  "properties": {
+    "prompt_content": {
+      "type": "string",
+      "description": "The prompt used in this run"
+    },
+    "temperature": {
+      "type": "number",
+      "description": "Temperature parameter (0-2)"
+    },
+    "top_p": {
+      "type": "number",
+      "description": "Top P parameter (0-1)"
+    },
+    "max_tokens": {
+      "type": "number",
+      "description": "Max tokens to generate"
+    },
+    "output": {
+      "type": "string",
+      "description": "Generated output"
+    },
+    "generation_time_ms": {
+      "type": "number",
+      "description": "Time taken to generate in milliseconds"
+    },
+    "template_id": {
+      "type": "string",
+      "description": "Template used if any"
+    }
+  },
+  "required": [
+    "prompt_content",
+    "output"
+  ],
+  "rls": {
+    "create": {
+      "created_by": "{{user.email}}"
+    },
+    "read": {
+      "created_by": "{{user.email}}"
+    },
+    "update": {
+      "created_by": "{{user.email}}"
+    },
+    "delete": {
+      "created_by": "{{user.email}}"
+    }
+  }
+}

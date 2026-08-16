@@ -1,0 +1,13 @@
+{
+  "name": "TemplateFavorite",
+  "type": "object",
+  "properties": {
+    "template_id": {
+      "type": "string",
+      "description": "ID of the favorited template"
+    }
+  },
+  "required": [
+    "template_id"
+  ]
+}
